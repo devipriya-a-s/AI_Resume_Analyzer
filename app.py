@@ -92,9 +92,9 @@ elif choice == "Resume Analysis":
             with st.expander("Click to View Extracted Text"):
                 st.write(text[:1500] + "...")
 
-        # ---------------- AI SKILL EXTRACTION ----------------
+        # ---------------- AI SECTION ----------------
         st.markdown("---")
-        st.markdown("## 🤖 AI Skill Extraction")
+        st.markdown("## 🤖 AI Skill Extraction & Guidance")
 
         api_key = st.text_input("Enter your Google Gemini API Key", type="password")
 
@@ -103,33 +103,32 @@ elif choice == "Resume Analysis":
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel("gemini-2.5-flash")
 
-            if st.button("Extract Skills Using AI"):
+            if st.button("Analyze Resume with AI"):
 
-                with st.spinner("Gemini is analyzing skills..."):
-
-                    prompt = f"""
-                    Extract all technical skills, software tools, and soft skills
-                    from the following resume text.
-                    Return them strictly as a comma-separated list.
-
-                    Resume Text:
-                    {text}
-                    """
+                with st.spinner("Gemini is analyzing your resume..."):
 
                     try:
-                        response = model.generate_content(prompt)
-                        skills_text = response.text
+                        # -------- SKILL EXTRACTION --------
+                        skill_prompt = f"""
+                        Extract all technical skills, software tools, and soft skills
+                        from the following resume text.
+                        Return them strictly as a comma-separated list.
 
+                        Resume Text:
+                        {text}
+                        """
+
+                        response = model.generate_content(skill_prompt)
+                        skills_text = response.text
                         ai_skills = [skill.strip() for skill in skills_text.split(",") if skill.strip()]
 
                         st.success("✅ Skills Extracted Successfully!")
 
-                        # -------- Display Skills --------
                         st.write("### 🛠️ Detected Skills:")
                         for skill in ai_skills:
                             st.markdown(f"- {skill}")
 
-                        # ---------------- STEP 5: JOB SKILL MATCHING ----------------
+                        # -------- JOB MATCHING --------
                         st.markdown("---")
                         st.markdown("## 🎯 Job Skill Matching (Data Analyst Role)")
 
@@ -159,6 +158,32 @@ elif choice == "Resume Analysis":
                                 )
                         else:
                             st.success("🎉 You already have all key skills for this job!")
+
+                        # ---------------- STEP 6: AI GUIDANCE ----------------
+                        if missing_skills:
+
+                            st.markdown("---")
+                            st.markdown("## 🤖 AI Resume Improvement Suggestions")
+
+                            feedback_prompt = f"""
+                            I have the following resume:
+
+                            {text}
+
+                            The candidate is missing these skills:
+                            {', '.join(missing_skills)}.
+
+                            Please:
+                            1. Suggest improvements to strengthen the resume.
+                            2. Give practical advice to add projects or experience.
+                            3. Suggest a learning roadmap.
+                            4. Improve resume structure and presentation.
+                            """
+
+                            feedback_response = model.generate_content(feedback_prompt)
+                            feedback = feedback_response.text
+
+                            st.write(feedback)
 
                     except Exception as e:
                         st.error(f"❌ Error: {e}")
