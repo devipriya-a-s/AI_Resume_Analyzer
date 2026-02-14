@@ -100,3 +100,4 @@ elif choice == "Resume Analysis":
 
 st.markdown("---")
 st.markdown("<center>Developed with ❤️ using Streamlit</center>", unsafe_allow_html=True)
+
