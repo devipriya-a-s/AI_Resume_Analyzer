@@ -25,9 +25,6 @@ st.markdown("""
     .stTextInput>div>div>input {
         border-radius: 10px;
     }
-    .css-1d391kg {
-        background-color: #1f4e79;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -77,12 +74,24 @@ elif choice == "Resume Analysis":
 
         st.success("🎉 Resume Uploaded Successfully!")
 
+        # Calculate word count
+        word_count = len(text.split())
+
         col1, col2 = st.columns([1,1])
 
         with col1:
             st.info("📊 Basic Resume Stats")
             st.write("**Total Characters:**", len(text))
-            st.write("**Total Words:**", len(text.split()))
+            st.write("**Total Words:**", word_count)
+
+            # Resume Length Evaluation
+            st.markdown("### 📏 Resume Length Evaluation")
+            if word_count < 300:
+                st.error("⚠️ Resume is too short. Add more details about skills, projects and experience.")
+            elif 300 <= word_count <= 1000:
+                st.success("✅ Resume length looks good and professional.")
+            else:
+                st.warning("⚠️ Resume is too long. Try to make it more concise.")
 
         with col2:
             st.info("📄 Extracted Content Preview")
