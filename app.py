@@ -4,35 +4,32 @@ from passlib.hash import pbkdf2_sha256
 import pdfplumber
 import google.generativeai as genai
 
-# ------------------ PAGE CONFIG ------------------
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(
     page_title="AI Resume Analyzer",
     page_icon="📄",
     layout="wide"
 )
 
-# ------------------ DATABASE INITIALIZATION ------------------
+# ---------------- DATABASE ----------------
 def init_db():
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            name TEXT,
+            email TEXT UNIQUE,
+            password TEXT
         )
     """)
 
-    # Resume table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS resumes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_email TEXT,
-            resume_text TEXT,
-            FOREIGN KEY(user_email) REFERENCES users(email)
+            resume_text TEXT
         )
     """)
 
@@ -41,25 +38,24 @@ def init_db():
 
 init_db()
 
-# ------------------ SESSION STATE ------------------
+# ---------------- SESSION STATE ----------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_name" not in st.session_state:
-    st.session_state.user_name = None
+    st.session_state.user_name = ""
 if "user_email" not in st.session_state:
-    st.session_state.user_email = None
+    st.session_state.user_email = ""
 
-# ------------------ DATABASE FUNCTIONS ------------------
-
+# ---------------- AUTH FUNCTIONS ----------------
 def register_user(name, email, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-    hashed_password = pbkdf2_sha256.hash(password)
+    hashed = pbkdf2_sha256.hash(password)
 
     try:
         cursor.execute(
             "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
-            (name, email, hashed_password)
+            (name, email, hashed)
         )
         conn.commit()
         conn.close()
@@ -72,28 +68,22 @@ def register_user(name, email, password):
 def login_user(email, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-
     cursor.execute("SELECT name, password FROM users WHERE email = ?", (email,))
     user = cursor.fetchone()
     conn.close()
 
     if user:
-        name, stored_password = user
-        if pbkdf2_sha256.verify(password, stored_password):
+        name, stored_pass = user
+        if pbkdf2_sha256.verify(password, stored_pass):
             return name
     return None
 
 
-def save_resume(email, resume_text):
+def save_resume(email, text):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-
-    cursor.execute("DELETE FROM resumes WHERE user_email = ?", (email,))
-    cursor.execute(
-        "INSERT INTO resumes (user_email, resume_text) VALUES (?, ?)",
-        (email, resume_text)
-    )
-
+    cursor.execute("DELETE FROM resumes WHERE user_email=?", (email,))
+    cursor.execute("INSERT INTO resumes (user_email, resume_text) VALUES (?, ?)", (email, text))
     conn.commit()
     conn.close()
 
@@ -101,192 +91,200 @@ def save_resume(email, resume_text):
 def load_resume(email):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-
-    cursor.execute("SELECT resume_text FROM resumes WHERE user_email = ?", (email,))
+    cursor.execute("SELECT resume_text FROM resumes WHERE user_email=?", (email,))
     data = cursor.fetchone()
     conn.close()
+    return data[0] if data else ""
 
-    if data:
-        return data[0]
-    return None
-
-
-# ------------------ SAMPLE JOB DATABASE ------------------
-
-def get_job_listings():
+# ---------------- JOB DATABASE ----------------
+def get_jobs():
     return [
-        {"title": "Python Developer", "company": "Tech Solutions", "skills": ["Python", "SQL", "Django"]},
+        {"title": "Python Developer", "company": "Tech Solutions", "skills": ["Python", "SQL", "APIs"]},
         {"title": "Data Analyst", "company": "DataCorp", "skills": ["SQL", "Data Analysis", "Excel"]},
-        {"title": "Machine Learning Engineer", "company": "AI Labs", "skills": ["Python", "Machine Learning", "TensorFlow"]},
-        {"title": "Backend Developer", "company": "Innovatech", "skills": ["Python", "APIs", "SQL"]}
+        {"title": "ML Engineer", "company": "AI Labs", "skills": ["Python", "Machine Learning", "TensorFlow"]},
     ]
 
-
-def find_matching_jobs(user_skills):
-    jobs = get_job_listings()
-    matched_jobs = []
+def match_jobs(user_skills):
+    jobs = get_jobs()
+    matched = []
 
     for job in jobs:
+        count = 0
         for skill in job["skills"]:
             if skill.lower() in [s.lower() for s in user_skills]:
-                matched_jobs.append(job)
-                break
+                count += 1
+        if count > 0:
+            percent = int((count / len(job["skills"])) * 100)
+            job["match"] = percent
+            matched.append(job)
+    return matched
 
-    return matched_jobs
-
-
-# ------------------ CUSTOM CSS ------------------
-st.markdown("""
-    <style>
-    .main { background-color: #f4f6f9; }
-    .stButton>button {
-        background-color: #4CAF50;
-        color: white;
-        border-radius: 10px;
-        height: 3em;
-        width: 100%;
-        font-size: 16px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# ------------------ TITLE ------------------
-st.markdown("<h1 style='text-align:center; color:#1f4e79;'>📄 AI Resume Analyzer</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align:center;'>Secure Login + Gemini AI 🚀</h4>", unsafe_allow_html=True)
+# ---------------- UI ----------------
+st.title("📄 AI Resume Analyzer")
+st.markdown("Secure Login + AI Skill Detection + Career Guidance")
 st.markdown("---")
 
-# ------------------ SIDEBAR ------------------
+# Sidebar
 st.sidebar.title("Navigation")
 
-if not st.session_state.logged_in:
-    menu = ["Login", "Register"]
+if st.session_state.logged_in:
+    choice = st.sidebar.selectbox("Select Option", ["Resume Analysis", "Logout"])
 else:
-    menu = ["Resume Analysis", "Logout"]
+    choice = st.sidebar.selectbox("Select Option", ["Login", "Register"])
 
-choice = st.sidebar.selectbox("Select Option", menu)
-
-# ------------------ REGISTER ------------------
+# ---------------- REGISTER ----------------
 if choice == "Register":
-    st.subheader("📝 Create Account")
+    st.subheader("Create Account")
 
     name = st.text_input("Full Name")
-    email = st.text_input("Email Address")
+    email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Register"):
         if register_user(name, email, password):
-            st.success("✅ Account created successfully!")
+            st.success("Account created successfully! Please login.")
         else:
-            st.error("❌ Email already exists!")
+            st.error("Email already exists.")
 
-# ------------------ LOGIN ------------------
+# ---------------- LOGIN ----------------
 elif choice == "Login":
-    st.subheader("🔑 Login")
+    st.subheader("Login")
 
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        user_name = login_user(email, password)
-        if user_name:
+        user = login_user(email, password)
+        if user:
             st.session_state.logged_in = True
-            st.session_state.user_name = user_name
+            st.session_state.user_name = user
             st.session_state.user_email = email
-            st.success(f"Welcome {user_name} 👋")
+            st.success(f"Welcome {user} 👋")
             st.rerun()
         else:
-            st.error("❌ Invalid email or password")
+            st.error("Invalid credentials")
 
-# ------------------ LOGOUT ------------------
+# ---------------- LOGOUT ----------------
 elif choice == "Logout":
     st.session_state.logged_in = False
-    st.session_state.user_name = None
-    st.session_state.user_email = None
-    st.success("Logged out successfully!")
+    st.session_state.user_name = ""
+    st.session_state.user_email = ""
+    st.success("Logged out successfully")
     st.rerun()
 
-# ------------------ RESUME ANALYSIS ------------------
-elif choice == "Resume Analysis" and st.session_state.logged_in:
+# ---------------- RESUME ANALYSIS ----------------
+elif choice == "Resume Analysis":
 
-    st.subheader(f"Welcome, {st.session_state.user_name} 👋")
-    st.markdown("### 📑 Resume Analysis & AI Skill Extraction")
+    if not st.session_state.logged_in:
+        st.warning("Please login first.")
+        st.stop()
 
-    saved_resume = load_resume(st.session_state.user_email)
-    uploaded_file = st.file_uploader("📂 Upload your Resume (PDF)", type=["pdf"])
+    st.subheader(f"Welcome {st.session_state.user_name}")
 
-    text = saved_resume if saved_resume else ""
+    uploaded_file = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
+    text = load_resume(st.session_state.user_email)
 
-    if uploaded_file is not None:
-        with st.spinner("Extracting Resume Content..."):
+    if uploaded_file:
+        with pdfplumber.open(uploaded_file) as pdf:
             text = ""
-            with pdfplumber.open(uploaded_file) as pdf:
-                for page in pdf.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        text += extracted
-
+            for page in pdf.pages:
+                content = page.extract_text()
+                if content:
+                    text += content
         save_resume(st.session_state.user_email, text)
-        st.success("🎉 Resume Uploaded & Saved Successfully!")
+        st.success("Resume uploaded and saved!")
 
     if text:
-        word_count = len(text.split())
+        st.markdown("### Resume Statistics")
+        st.write("Characters:", len(text))
+        st.write("Words:", len(text.split()))
 
-        st.info("📊 Resume Statistics")
-        st.write("**Total Characters:**", len(text))
-        st.write("**Total Words:**", word_count)
-
-        with st.expander("📄 Resume Preview"):
-            st.write(text[:1500] + "...")
+        with st.expander("Resume Preview"):
+            st.write(text[:2000] + "...")
 
         st.markdown("---")
-        st.markdown("## 🤖 AI Skill Extraction & Job Notifications")
+        st.markdown("## AI Skill Extraction")
 
-        api_key = st.text_input("Enter your Google Gemini API Key", type="password")
+        api_key = st.text_input("Enter Gemini API Key", type="password")
 
         if api_key:
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel("gemini-2.5-flash")
 
-            if st.button("Analyze Resume with AI"):
-                try:
-                    skill_prompt = f"""
-                    Extract all technical skills, software tools, and soft skills
-                    from the following resume text.
-                    Return them strictly as a comma-separated list.
+            if st.button("Analyze Resume"):
 
-                    Resume Text:
-                    {text}
-                    """
+                prompt = f"""
+                Extract all technical and soft skills from this resume.
+                Return only comma-separated skills.
 
-                    response = model.generate_content(skill_prompt)
-                    skills_text = response.text
-                    ai_skills = [s.strip() for s in skills_text.split(",") if s.strip()]
+                Resume:
+                {text}
+                """
 
-                    st.success("✅ Skills Extracted!")
-                    st.write("### 🛠️ Detected Skills:")
-                    for skill in ai_skills:
-                        st.markdown(f"- {skill}")
+                response = model.generate_content(prompt)
+                ai_skills = [s.strip() for s in response.text.split(",") if s.strip()]
 
-                    # 🔔 JOB NOTIFICATIONS
-                    matched_jobs = find_matching_jobs(ai_skills)
+                st.success("Skills Extracted!")
+                for skill in ai_skills:
+                    st.write("-", skill)
 
-                    st.markdown("---")
-                    st.markdown("## 🔔 New Job Notifications")
+                # JOB MATCHING
+                st.markdown("---")
+                st.subheader("🔔 Job Matches")
 
-                    if matched_jobs:
-                        for job in matched_jobs:
-                            st.toast(f"New Job Match: {job['title']} at {job['company']} 🎉")
-                            st.success(f"""
-                            **{job['title']}**
-                            Company: {job['company']}
-                            Required Skills: {', '.join(job['skills'])}
-                            """)
-                    else:
-                        st.info("No matching jobs found currently.")
+                matches = match_jobs(ai_skills)
 
-                except Exception as e:
-                    st.error(f"Error: {e}")
+                if matches:
+                    for job in matches:
+                        st.toast(f"{job['title']} Match: {job['match']}% 🎉")
+                        st.success(f"""
+                        {job['title']} at {job['company']}
+                        Match: {job['match']}%
+                        Required Skills: {', '.join(job['skills'])}
+                        """)
+                else:
+                    st.info("No matching jobs found.")
 
-# ------------------ FOOTER ------------------
+                # MISSING SKILLS
+                job_skills = ["Python", "SQL", "Machine Learning", "Communication", "Data Analysis"]
+
+                missing = [skill for skill in job_skills
+                           if skill.lower() not in [s.lower() for s in ai_skills]]
+
+                st.markdown("---")
+                st.subheader("📚 Skills to Improve")
+
+                if missing:
+                    for skill in missing:
+                        link = skill.replace(" ", "-")
+                        st.markdown(f"- {skill} → [Learn here](https://roadmap.sh/{link})")
+                else:
+                    st.success("You already have all required skills!")
+
+                # AI GUIDANCE
+                if missing:
+                    if st.button("Get AI Career Guidance"):
+
+                        guide_prompt = f"""
+                        Resume:
+                        {text}
+
+                        Missing Skills:
+                        {', '.join(missing)}
+
+                        Provide:
+                        - Resume improvements
+                        - Learning roadmap
+                        - Project ideas
+                        - Career advice
+                        """
+
+                        guide = model.generate_content(guide_prompt)
+
+                        st.markdown("---")
+                        st.subheader("🤖 AI Career Guidance")
+                        st.write(guide.text)
+
+# ---------------- FOOTER ----------------
 st.markdown("---")
-st.markdown("<center>Developed with ❤️ using Streamlit, SQLite & Gemini AI</center>", unsafe_allow_html=True)
+st.markdown("Developed using Streamlit + SQLite + Gemini AI")
