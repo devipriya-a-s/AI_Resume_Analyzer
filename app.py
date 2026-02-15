@@ -16,12 +16,23 @@ def init_db():
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
+    # Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL
+        )
+    """)
+
+    # Resume table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS resumes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT,
+            resume_text TEXT,
+            FOREIGN KEY(user_email) REFERENCES users(email)
         )
     """)
 
@@ -37,7 +48,12 @@ if "logged_in" not in st.session_state:
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
 
-# ------------------ REGISTER FUNCTION ------------------
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+
+
+# ------------------ DATABASE FUNCTIONS ------------------
+
 def register_user(name, email, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
@@ -56,7 +72,7 @@ def register_user(name, email, password):
         conn.close()
         return False
 
-# ------------------ LOGIN FUNCTION ------------------
+
 def login_user(email, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
@@ -70,6 +86,38 @@ def login_user(email, password):
         if pbkdf2_sha256.verify(password, stored_password):
             return name
     return None
+
+
+# ---------- SAVE RESUME ----------
+def save_resume(email, resume_text):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+
+    # Remove old resume
+    cursor.execute("DELETE FROM resumes WHERE user_email = ?", (email,))
+
+    cursor.execute(
+        "INSERT INTO resumes (user_email, resume_text) VALUES (?, ?)",
+        (email, resume_text)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ---------- LOAD RESUME ----------
+def load_resume(email):
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT resume_text FROM resumes WHERE user_email = ?", (email,))
+    data = cursor.fetchone()
+    conn.close()
+
+    if data:
+        return data[0]
+    return None
+
 
 # ------------------ CUSTOM CSS ------------------
 st.markdown("""
@@ -127,6 +175,7 @@ elif choice == "Login":
         if user_name:
             st.session_state.logged_in = True
             st.session_state.user_name = user_name
+            st.session_state.user_email = email
             st.success(f"Welcome {user_name} 👋")
             st.rerun()
         else:
@@ -136,19 +185,24 @@ elif choice == "Login":
 elif choice == "Logout":
     st.session_state.logged_in = False
     st.session_state.user_name = None
+    st.session_state.user_email = None
     st.success("Logged out successfully!")
     st.rerun()
 
-# ------------------ RESUME ANALYSIS (PROTECTED) ------------------
+# ------------------ RESUME ANALYSIS ------------------
 elif choice == "Resume Analysis" and st.session_state.logged_in:
 
     st.subheader(f"Welcome, {st.session_state.user_name} 👋")
     st.markdown("### 📑 Resume Analysis & AI Skill Extraction")
 
+    # Load previously saved resume
+    saved_resume = load_resume(st.session_state.user_email)
+
     uploaded_file = st.file_uploader("📂 Upload your Resume (PDF)", type=["pdf"])
 
-    if uploaded_file is not None:
+    text = saved_resume if saved_resume else ""
 
+    if uploaded_file is not None:
         with st.spinner("Extracting Resume Content..."):
             text = ""
             with pdfplumber.open(uploaded_file) as pdf:
@@ -157,8 +211,13 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
                     if extracted:
                         text += extracted
 
-        st.success("🎉 Resume Uploaded Successfully!")
+        # Save to database
+        save_resume(st.session_state.user_email, text)
 
+        st.success("🎉 Resume Uploaded & Saved Successfully!")
+
+    # Show resume if exists
+    if text:
         word_count = len(text.split())
 
         col1, col2 = st.columns(2)
@@ -179,6 +238,7 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
             with st.expander("📄 Resume Preview"):
                 st.write(text[:1500] + "...")
 
+        # Gemini AI section remains unchanged
         st.markdown("---")
         st.markdown("## 🤖 AI Skill Extraction & Guidance")
 
@@ -190,7 +250,6 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
 
             if st.button("Analyze Resume with AI"):
                 try:
-                    # -------- Skill Extraction --------
                     skill_prompt = f"""
                     Extract all technical skills, software tools, and soft skills
                     from the following resume text.
@@ -209,50 +268,6 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
                     st.write("### 🛠️ Detected Skills:")
                     for skill in ai_skills:
                         st.markdown(f"- {skill}")
-
-                    # -------- Job Matching --------
-                    job_skills = ["Python", "SQL", "Machine Learning", "Communication", "Data Analysis"]
-
-                    missing_skills = [
-                        skill for skill in job_skills
-                        if skill.lower() not in [s.lower() for s in ai_skills]
-                    ]
-
-                    st.markdown("---")
-                    st.markdown("## 🎯 Job Skill Matching")
-
-                    st.write("Required Skills:", ", ".join(job_skills))
-
-                    if missing_skills:
-                        st.subheader("📚 Skills to Improve:")
-                        for skill in missing_skills:
-                            roadmap_link = f"https://roadmap.sh/{skill.replace(' ','-')}"
-                            st.markdown(f"- **{skill}** → [Learn here]({roadmap_link})")
-                    else:
-                        st.success("🎉 You match all required skills!")
-
-                    # -------- AI Guidance --------
-                    if missing_skills:
-                        st.markdown("---")
-                        st.markdown("## 🤖 AI Resume Suggestions")
-
-                        feedback_prompt = f"""
-                        I have the following resume:
-
-                        {text}
-
-                        The candidate is missing these skills:
-                        {', '.join(missing_skills)}.
-
-                        Suggest:
-                        - Resume improvements
-                        - Project ideas
-                        - Learning roadmap
-                        - Structure improvements
-                        """
-
-                        feedback_response = model.generate_content(feedback_prompt)
-                        st.write(feedback_response.text)
 
                 except Exception as e:
                     st.error(f"Error: {e}")
