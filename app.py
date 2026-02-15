@@ -44,20 +44,16 @@ init_db()
 # ------------------ SESSION STATE ------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-
 if "user_name" not in st.session_state:
     st.session_state.user_name = None
-
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
-
 
 # ------------------ DATABASE FUNCTIONS ------------------
 
 def register_user(name, email, password):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
-
     hashed_password = pbkdf2_sha256.hash(password)
 
     try:
@@ -88,14 +84,11 @@ def login_user(email, password):
     return None
 
 
-# ---------- SAVE RESUME ----------
 def save_resume(email, resume_text):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
 
-    # Remove old resume
     cursor.execute("DELETE FROM resumes WHERE user_email = ?", (email,))
-
     cursor.execute(
         "INSERT INTO resumes (user_email, resume_text) VALUES (?, ?)",
         (email, resume_text)
@@ -105,7 +98,6 @@ def save_resume(email, resume_text):
     conn.close()
 
 
-# ---------- LOAD RESUME ----------
 def load_resume(email):
     conn = sqlite3.connect("users.db")
     cursor = conn.cursor()
@@ -117,6 +109,30 @@ def load_resume(email):
     if data:
         return data[0]
     return None
+
+
+# ------------------ SAMPLE JOB DATABASE ------------------
+
+def get_job_listings():
+    return [
+        {"title": "Python Developer", "company": "Tech Solutions", "skills": ["Python", "SQL", "Django"]},
+        {"title": "Data Analyst", "company": "DataCorp", "skills": ["SQL", "Data Analysis", "Excel"]},
+        {"title": "Machine Learning Engineer", "company": "AI Labs", "skills": ["Python", "Machine Learning", "TensorFlow"]},
+        {"title": "Backend Developer", "company": "Innovatech", "skills": ["Python", "APIs", "SQL"]}
+    ]
+
+
+def find_matching_jobs(user_skills):
+    jobs = get_job_listings()
+    matched_jobs = []
+
+    for job in jobs:
+        for skill in job["skills"]:
+            if skill.lower() in [s.lower() for s in user_skills]:
+                matched_jobs.append(job)
+                break
+
+    return matched_jobs
 
 
 # ------------------ CUSTOM CSS ------------------
@@ -195,9 +211,7 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
     st.subheader(f"Welcome, {st.session_state.user_name} 👋")
     st.markdown("### 📑 Resume Analysis & AI Skill Extraction")
 
-    # Load previously saved resume
     saved_resume = load_resume(st.session_state.user_email)
-
     uploaded_file = st.file_uploader("📂 Upload your Resume (PDF)", type=["pdf"])
 
     text = saved_resume if saved_resume else ""
@@ -211,36 +225,21 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
                     if extracted:
                         text += extracted
 
-        # Save to database
         save_resume(st.session_state.user_email, text)
-
         st.success("🎉 Resume Uploaded & Saved Successfully!")
 
-    # Show resume if exists
     if text:
         word_count = len(text.split())
 
-        col1, col2 = st.columns(2)
+        st.info("📊 Resume Statistics")
+        st.write("**Total Characters:**", len(text))
+        st.write("**Total Words:**", word_count)
 
-        with col1:
-            st.info("📊 Resume Statistics")
-            st.write("**Total Characters:**", len(text))
-            st.write("**Total Words:**", word_count)
+        with st.expander("📄 Resume Preview"):
+            st.write(text[:1500] + "...")
 
-            if word_count < 300:
-                st.error("⚠️ Resume is too short.")
-            elif 300 <= word_count <= 1000:
-                st.success("✅ Resume length looks professional.")
-            else:
-                st.warning("⚠️ Resume is too long.")
-
-        with col2:
-            with st.expander("📄 Resume Preview"):
-                st.write(text[:1500] + "...")
-
-        # Gemini AI section remains unchanged
         st.markdown("---")
-        st.markdown("## 🤖 AI Skill Extraction & Guidance")
+        st.markdown("## 🤖 AI Skill Extraction & Job Notifications")
 
         api_key = st.text_input("Enter your Google Gemini API Key", type="password")
 
@@ -264,10 +263,26 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
                     ai_skills = [s.strip() for s in skills_text.split(",") if s.strip()]
 
                     st.success("✅ Skills Extracted!")
-
                     st.write("### 🛠️ Detected Skills:")
                     for skill in ai_skills:
                         st.markdown(f"- {skill}")
+
+                    # 🔔 JOB NOTIFICATIONS
+                    matched_jobs = find_matching_jobs(ai_skills)
+
+                    st.markdown("---")
+                    st.markdown("## 🔔 New Job Notifications")
+
+                    if matched_jobs:
+                        for job in matched_jobs:
+                            st.toast(f"New Job Match: {job['title']} at {job['company']} 🎉")
+                            st.success(f"""
+                            **{job['title']}**
+                            Company: {job['company']}
+                            Required Skills: {', '.join(job['skills'])}
+                            """)
+                    else:
+                        st.info("No matching jobs found currently.")
 
                 except Exception as e:
                     st.error(f"Error: {e}")
