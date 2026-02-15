@@ -1,7 +1,6 @@
 import streamlit as st
 import sqlite3
-from passlib.hash
-import pbkdf2_sha256
+from passlib.hash import pbkdf2_sha256
 import pdfplumber
 import google.generativeai as genai
 
@@ -261,4 +260,3 @@ elif choice == "Resume Analysis" and st.session_state.logged_in:
 # ------------------ FOOTER ------------------
 st.markdown("---")
 st.markdown("<center>Developed with ❤️ using Streamlit, SQLite & Gemini AI</center>", unsafe_allow_html=True)
-
